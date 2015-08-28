@@ -1,0 +1,279 @@
+﻿@inherits Composite.AspNet.Razor.RazorFunction
+
+@using System
+@using System.Collections.Generic
+@using System.Linq
+
+@using Composite.AspNet.Security
+@using Composite.C1Console.Security
+@using Composite.C1Console.Trees
+@using Composite.Core.Routing
+@using Composite.Data
+@using Composite.Data.Types
+@using Composite.Plugins.Elements.ElementProviders.BaseFunctionProviderElementProvider
+@using Composite.Plugins.Elements.ElementProviders.UserElementProvider
+@using Composite.Plugins.Elements.ElementProviders.VirtualElementProvider
+
+@using CompositeC1Contrib.FormBuilder.C1Console.EntityTokens
+@using CompositeC1Contrib.FormBuilder.FunctionProviders
+
+@functions
+{
+    private static string[] DeserializeEntityToken(string serializedEntityToken, IUserGroupPermissionDefinition permissionDefinition)
+    {
+        var permissionNames = new List<string>();
+        using (var c = new DataConnection())
+        {
+            permissionNames.AddRange(c.Get<IUserGroupPermissionDefinitionPermissionType>()
+                .Where(pt => pt.UserGroupPermissionDefinitionId == permissionDefinition.Id)
+                .Select(pt => pt.PermissionTypeName));
+        }
+
+        var permissionList = String.Join(", ", permissionNames.OrderBy(t => t));
+
+        var permissionText = permissionList == "Add, Approve, Delete, Edit, Publish, Read" ? " <span class=\"ghosted smaller\"> : Std. permissions</span>" : String.Format("<br/><span class=\"smaller\">Permissions: {0}</span>", permissionList);
+
+        var entityToken = EntityTokenSerializer.Deserialize(serializedEntityToken);
+
+        var dataEntityToken = entityToken as DataEntityToken;
+        if (dataEntityToken != null)
+        {
+            if (dataEntityToken.Data == null)
+            {
+                return new[] { "00: <span class=\"error\">Error</span>", String.Format("Data entity token {0} has no data", dataEntityToken.Id) };
+            }
+
+            if (dataEntityToken.InterfaceType == typeof(IMediaFile))
+            {
+                var media = (IMediaFile)dataEntityToken.Data;
+
+                return new[] { "04: Media", media.CompositePath + permissionText };
+            }
+
+            if (dataEntityToken.InterfaceType == typeof(IMediaFileFolder))
+            {
+                var mediaFolder = (IMediaFileFolder)dataEntityToken.Data;
+
+                return new[] { "03: Media folders", mediaFolder.Path + permissionText };
+            }
+
+            if (dataEntityToken.InterfaceType == typeof(IPage))
+            {
+                var page = (IPage)dataEntityToken.Data;
+
+                return new[] { "02: Pages", PageUrls.BuildUrl(page).Replace("/c1mode(unpublished)", "") + permissionText };
+            }
+
+            return new[] { "00: <span class=\"highlight\">Unhanded data entity token<span>", dataEntityToken.InterfaceType + "<br/>" + entityToken };
+        }
+
+        var virtualElementProviderEntityToken = entityToken as VirtualElementProviderEntityToken;
+        if (virtualElementProviderEntityToken != null)
+        {
+            if (virtualElementProviderEntityToken.Id == "ID01")
+            {
+                return new[] { "01: Global permissions", permissionList == "Add, Approve, Delete, Edit, Publish, Read" ? " <span class=\"normal ghosted\">Std. permissions</span>" : permissionList };
+            }
+
+            return new[] { "00: <span class=\"highlight\">Unhanded virtual element provider entity token</span>", entityToken.ToString() };
+        }
+
+        var treeSimpleElementEntityToken = entityToken as TreeSimpleElementEntityToken;
+        if (treeSimpleElementEntityToken != null)
+        {
+            //TODO Specify tree name like 'Content -> Website Items'. Show tree Label instead of Id
+            return new[] { "15: Tree", treeSimpleElementEntityToken.Id + permissionText };
+        }
+
+        var baseFunctionFolderElementEntityToken = entityToken as BaseFunctionFolderElementEntityToken;
+        if (baseFunctionFolderElementEntityToken != null)
+        {
+            return new[] { "20: Function namespaces", baseFunctionFolderElementEntityToken.FunctionNamespace + permissionText };
+        }
+
+        var fileBasedFunctionEntityToken = entityToken as FileBasedFunctionEntityToken;
+        if (fileBasedFunctionEntityToken != null)
+        {
+            if (fileBasedFunctionEntityToken.Source == "RazorFunctionProvider")
+            {
+                return new[] { "21: Razor functions", String.Format("{0}{1}", fileBasedFunctionEntityToken.Id, permissionText) };
+            }
+
+            if (fileBasedFunctionEntityToken.Source == "UserControlFunctionProvider")
+            {
+                return new[] { "21: User control functions", String.Format("{0}{1}", fileBasedFunctionEntityToken.Id, permissionText) };
+            }
+
+            return new[] { "00: <span class=\"highlight\">Unhanded file based function entity token</span>", entityToken.ToString() };
+        }
+
+        var formBuilderFolderEntityToken = entityToken as NamespaceFolderEntityToken;
+        if (formBuilderFolderEntityToken != null)
+        {
+            return new[] { "40: Formbuilder folder", formBuilderFolderEntityToken.Namespace + permissionText };
+        }
+
+        var formBuilderFunctionEntityToken = entityToken as FormBuilderFunctionEntityToken;
+        if (formBuilderFunctionEntityToken != null)
+        {
+            return new[] { "21: Formbuilder function", formBuilderFunctionEntityToken.Id + permissionText };
+        }
+
+        var formBuilderInstanceEntityToken = entityToken as FormInstanceEntityToken;
+        if (formBuilderInstanceEntityToken != null)
+        {
+            return new[] { "40: Formbuilder form", formBuilderInstanceEntityToken.FormName + permissionText };
+        }
+
+        var userElementProviderGroupEntityToken = entityToken as UserElementProviderGroupEntityToken;
+        if (userElementProviderGroupEntityToken != null)
+        {
+            return new[] { "99: Users and permissions", String.Format("Users -> {0} (folder name){1}", userElementProviderGroupEntityToken.Id, permissionText) };
+        }
+
+        // internal entity token
+        if (entityToken.GetType().ToString() == "Composite.Plugins.Elements.ElementProviders.UserElementProvider.UserElementProviderEntityToken")
+        {
+            return new[] { "99: Users and permissions", "Users (root node)" + permissionText };
+        }
+
+        if (entityToken.GetType().ToString() == "Composite.Plugins.Elements.ElementProviders.UserGroupElementProvider.UserGroupElementProviderRootEntityToken")
+        {
+            return new[] { "99: Users and permissions", "User groups (root node)" + permissionText };
+        }
+
+        return new[] { "00: <span class=\"highlight\">Unhanded entity token</span>", entityToken.GetType() + "<br/>" + entityToken };
+    }
+
+    public class UserGroupInfo
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; }
+        public List<Folder> Folders { get; set; }
+        public List<TokenType> Permissions { get; set; }
+
+        public UserGroupInfo(Guid id, string name, List<Folder> folders, List<TokenType> permissions)
+        {
+            Id = id;
+            Name = name;
+            Folders = folders;
+            Permissions = permissions;
+        }
+    }
+
+    public class Folder
+    {
+        public string Name { get; set; }
+        public List<IUser> Users { get; set; }
+
+        public Folder(string name, List<IUser> users)
+        {
+            Name = name;
+            Users = users;
+        }
+    }
+
+    public class TokenType
+    {
+        public string Name { get; set; }
+        public List<string> Item { get; set; }
+
+        public TokenType(string name, List<string> items)
+        {
+            Name = name;
+            Item = items;
+        }
+    }}
+
+@{
+    var userGroups = new List<UserGroupInfo>();
+
+    foreach (var userGroup in Data.Get<IUserGroup>().OrderBy(o => o.Name))
+    {
+        var group = userGroup;
+
+        var users = Data.Get<IUserUserGroupRelation>()
+            .Where(f => f.UserGroupId == group.Id)
+            .Join(Data.Get<IUser>(), g => g.UserId, user => user.Id, (g, user) => user)
+            .GroupBy(f => f.Group)
+            .OrderBy(f => f.Key)
+            .Select(f => new Folder(f.Key, f.OrderBy(o => o.Username).ToList()))
+            .ToList();
+
+        var permissions = Data.Get<IUserGroupPermissionDefinition>()
+            .Where(f => f.UserGroupId == group.Id)
+            .Select(f => DeserializeEntityToken(f.SerializedEntityToken, f))
+            .GroupBy(f => f[0])
+            .OrderBy(f => f.Key)
+            .Select(f => new TokenType(f.Key.Substring(3), f.Select(t => t[1]).OrderBy(t => t).ToList()))
+            .ToList();
+
+        userGroups.Add(new UserGroupInfo(userGroup.Id, userGroup.Name, users, permissions));
+    }
+}
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>User group setup</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <h1>User group setup (users and permissions)</h1>
+    <table class="style-01" style="float: right; width: 20%;">
+        <tr>
+            <th>Go to</th>
+        </tr>
+        <tr>
+            <td>
+                <ul>
+                    @foreach (var instance in userGroups)
+                    {
+                        <li><a href="#id-@instance.Id">@instance.Name</a></li>
+                    }
+                </ul>
+            </td>
+        </tr>
+    </table>
+    <table class="style-01" style="float: left; width: 80%;">
+        <tr>
+            <th>User group</th>
+            <th>Users</th>
+            <th>Permissions <span class="normal">(Standard is Add, Approve, Delete, Edit, Publish, Read)</span></th>
+            <th class="ghosted-cell"></th>
+        </tr>
+        @foreach (var instance in userGroups)
+        {
+            <tr>
+                <td id="id-@instance.Id">@instance.Name</td>
+                <td>
+                    @foreach (var folder in instance.Folders)
+                    {
+                        <div>@folder.Name</div>
+                        <ul>
+                            @foreach (var user in folder.Users)
+                            {
+
+                                <li><a href="UserSetup.cshtml#id-@user.Username" title="Show user setup">@user.Username</a> : @Html.Raw(String.IsNullOrEmpty(user.Name) ? "<span class=\"ghosted\">Name is not specified</span>" : user.Name)</li>
+                            }
+                        </ul>
+                    }
+                </td>
+                <td>
+                    @foreach (var permission in instance.Permissions)
+                    {
+                        <div>@Html.Raw(permission.Name)</div>
+                        <ul>
+                            @foreach (var item in permission.Item)
+                            {
+
+                                <li>@Html.Raw(item)</li>
+                            }
+                        </ul>
+                    }
+                </td>
+                <td class="ghosted-cell"><a href="#">&#65514;</a></td>
+            </tr>
+        }
+    </table>
+</body>
+</html>

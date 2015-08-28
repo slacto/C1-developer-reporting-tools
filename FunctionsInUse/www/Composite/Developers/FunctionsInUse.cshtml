@@ -1,0 +1,606 @@
+﻿@using System.Text.RegularExpressions
+@using System.Web.Hosting
+
+@using Composite.AspNet.Razor
+@using Composite.Core.Routing
+@using Composite.Core.Types
+@using Composite.Data
+@using Composite.Data.Types
+
+@inherits RazorFunction
+
+@functions
+{
+    public Dictionary<string, string> AllFunctions { get; set; }
+    private List<FunctionsInPagePlaceholderContent> FunctionsInPagePlaceholderContents { get; set; }
+
+    ///<summary>
+    ///<para>Find <f:function /> in a string</para>
+    ///</summary>
+    public List<FoundFunction> GetFunctionsByTag(string content)
+    {
+        var foundFunctions = new List<FoundFunction>();
+
+        while (true)
+        {
+            var functionIndex = content.IndexOf("<f:function name=\"", StringComparison.OrdinalIgnoreCase);
+
+            if (functionIndex == -1)
+            {
+                return foundFunctions;
+            }
+
+            content = content.Substring(functionIndex);
+
+            var closeIndex = content.IndexOf("/>", StringComparison.Ordinal);
+
+            if (closeIndex == -1)
+            {
+                closeIndex = content.IndexOf("</", StringComparison.Ordinal);
+            }
+
+            if (closeIndex == -1)
+            {
+                closeIndex = content.Length - 1;
+            }
+
+            var paramIndex = content.IndexOf("<f:param", 0, closeIndex, StringComparison.OrdinalIgnoreCase);
+            var functionCode = (paramIndex == -1) ? content.Substring(0, closeIndex + 2) : content.Substring(0, content.IndexOf("</f:function>", StringComparison.OrdinalIgnoreCase) + 13);
+
+            var functionName = GetTagFunctionName(functionCode);
+
+            foundFunctions.Add(new FoundFunction(functionName, functionCode));
+
+            //content = content.Substring(functionCode.Length);
+            content = content.Substring(1);
+        }
+    }
+
+    private static string GetTagFunctionName(string functionCode)
+    {
+        return functionCode.Substring(18, functionCode.IndexOf("\"", 19, StringComparison.Ordinal) - 18);
+    }
+
+    public List<FoundFunction> ListFunctionsRazorWay(string content, string startMatch, string endMatch)
+    {
+        var foundFunctions = new List<FoundFunction>();
+        var startMatchLength = startMatch.Length;
+
+        while (true)
+        {
+            var functionIndex = content.IndexOf(startMatch, StringComparison.Ordinal);
+
+            if (functionIndex == -1)
+            {
+                return foundFunctions;
+            }
+
+            content = content.Substring(functionIndex);
+
+            var closeIndex = content.IndexOf(endMatch, startMatchLength, StringComparison.Ordinal);
+
+            if (closeIndex == -1)
+            {
+                closeIndex = content.Length - 2;
+            }
+
+            var functionCode = content.Substring(0, closeIndex + 1);
+            var length = functionCode.IndexOf("\"", startMatchLength + 2, StringComparison.Ordinal) - (startMatchLength + 1);
+            var functionName = "! Unknown";
+
+            if (length > 0)
+            {
+                functionName = functionCode.Substring(startMatchLength + 1, length);
+            }
+
+            foundFunctions.Add(new FoundFunction(functionName, functionCode));
+
+            content = content.Substring(functionCode.Length);
+        }
+    }
+
+
+    public List<FoundFunction> ListFunctionsMvcWay(string content)
+    {
+        var foundFunctions = new List<FoundFunction>();
+
+        content = content.Replace(" xmlns:f=\"http://www.composite.net/ns/function/1.0\"", String.Empty);
+
+        const string startMatch = "<f:function name=\"Composite.AspNet.MvcPlayer\"><f:param name=\"Path\" value=\"";
+        var startMatchLength = startMatch.Length;
+
+        while (true)
+        {
+            var functionIndex = content.IndexOf(startMatch, StringComparison.Ordinal);
+
+            if (functionIndex == -1)
+            {
+                return foundFunctions;
+            }
+
+            content = content.Substring(functionIndex);
+
+            var closeIndex = content.IndexOf("\" /></f:function>", startMatchLength, StringComparison.Ordinal);
+
+            if (closeIndex == -1)
+            {
+                closeIndex = content.Length - 2;
+            }
+
+            var functionCode = content.Substring(0, closeIndex + 17);
+            var length = functionCode.IndexOf("\"", startMatchLength + 2, StringComparison.Ordinal) - (startMatchLength);
+            var functionName = "! Unknown";
+
+            if (length > 0)
+            {
+                functionName = functionCode.Substring(startMatchLength, length).TrimStart(new[] { '/' }).Replace("/", ".");
+            }
+
+            foundFunctions.Add(new FoundFunction(functionName, functionCode));
+
+            content = content.Substring(functionCode.Length);
+        }
+    }
+
+    ///<summary>
+    ///<para>Loop through IPagePlaceHolderContent by PublicationScope</para>
+    ///</summary>
+    public void GetFunctionsInPagePlaceHolderContent(PublicationScope publicationScope)
+    {
+        using (var data = new DataConnection(publicationScope))
+        {
+            var pagePlaceholderContents = data.Get<IPagePlaceholderContent>()
+                .Where(f => f.Content.Contains("<f:function") && Data.SitemapNavigator.GetPageNodeById(f.PageId) != null);
+
+            foreach (var placeholder in pagePlaceholderContents)
+            {
+                var content = MinifyCode(placeholder.Content);
+
+                content = MinifyCode(content);
+
+                FunctionsInPagePlaceholderContents.AddRange(GetFunctionsByTag(content).Select(foundFunction => new FunctionsInPagePlaceholderContent(placeholder.PageId, publicationScope, placeholder.PlaceHolderId, foundFunction.FunctionName, foundFunction.FunctionCode, "PagePlaceholder")));
+                FunctionsInPagePlaceholderContents.AddRange(ListFunctionsMvcWay(content).Select(foundFunction => new FunctionsInPagePlaceholderContent(placeholder.PageId, publicationScope, placeholder.PlaceHolderId, foundFunction.FunctionName, foundFunction.FunctionCode, "PagePlaceholder (MvcPlayer)")));
+            }
+        }
+    }
+
+    ///<summary>
+    ///<para>Loop through files in selected folder</para>
+    ///</summary>
+    public List<FunctionsInUse> GetFunctionsInFiles(string path, string searchPattern, SearchOption searchOption, bool htmlDecode)
+    {
+        var functions = new List<FunctionsInUse>();
+
+        if (!Directory.Exists(path))
+        {
+            return functions;
+        }
+
+        var files = Directory.GetFiles(path, searchPattern, searchOption);
+        var sourceType = path.Substring(path.LastIndexOf("\\", StringComparison.Ordinal) + 1);
+
+        foreach (var file in files)
+        {
+            // find function in page template
+            var streamReader = new StreamReader(file);
+            var code = streamReader.ReadToEnd();
+            streamReader.Close();
+
+            code = MinifyCode(code);
+
+            var foundFunctions = htmlDecode ? GetFunctionsByTag(WebUtility.HtmlDecode(code)) : GetFunctionsByTag(code);
+            foundFunctions.AddRange(ListFunctionsRazorWay(code, "@Html.C1().Function(", ")"));
+            foundFunctions.AddRange(ListFunctionsRazorWay(code, "@Function(", ")"));
+            foundFunctions.AddRange(ListFunctionsRazorWay(code, "@Functions.ExecuteFunction(", ")"));
+            foundFunctions.AddRange(ListFunctionsMvcWay(code));
+
+            var fileName = file.Replace(path + "\\", "");
+            string description;
+            if (sourceType == "PageTemplates" && !fileName.StartsWith("_"))
+            {
+                description = String.Format("<a href=\"/Composite/Developers/TemplatesInUse.cshtml?templateName={0}\">{0}</a>", fileName);
+            }
+            else if (sourceType == "Razor")
+            {
+                description = String.Format("<a href=\"?functionname={0}\">{1}</a>", fileName.Substring(0, fileName.IndexOf(".", StringComparison.Ordinal)).Replace("\\", "."), fileName);
+            }
+            else
+            {
+                description = fileName;
+            }
+
+            functions.AddRange(foundFunctions.Select(foundFunction => new FunctionsInUse(sourceType, description, foundFunction.FunctionName, foundFunction.FunctionCode)));
+        }
+
+        if (sourceType == "PageTemplates") return functions;
+
+        foreach (var file in files)
+        {
+            if (file.EndsWith(".config"))
+            {
+                continue;
+            }
+
+            var functionName = file.Replace(path + "\\", "");
+            if (file.Contains("\\App_Data\\FormBuilder\\"))
+            {
+                functionName = functionName.Replace("\\DynamicDefinition.xml", "");
+            }
+            else
+            {
+                if (file.Contains("\\App_Data\\Razor\\") && !functionName.EndsWith(".cshtml"))
+                {
+                    continue;
+                }
+                if (file.Contains("\\App_Data\\Xslt\\") && !functionName.EndsWith(".xsl"))
+                {
+                    continue;
+                }
+                if (file.Contains("\\Views\\") && !functionName.EndsWith(".cshtml"))
+                {
+                    continue;
+                }
+
+                functionName = functionName.Substring(0, functionName.LastIndexOf(".", StringComparison.Ordinal)).Replace(path + "\\", "").Replace("\\", ".");
+            }
+
+            if (AllFunctions.ContainsKey(functionName))
+            {
+                functionName = file;
+            }
+
+            AllFunctions.Add(functionName, sourceType);
+        }
+
+        return functions;
+    }
+
+    private static string MinifyCode(string code)
+    {
+        code = Regex.Replace(code, @"\t|\n|\r", "");
+        code = Regex.Replace(code, @"\s+", " ").Replace("> <", "><");
+        code = code.Replace(" xmlns:f=\"http://www.composite.net/ns/function/1.0\"", "");
+        code = code.Replace(" runat=\"server\"", "");
+        
+        return code;
+    }
+}
+
+@{
+    var pathToAppData = HostingEnvironment.MapPath(@"\App_Data");
+    var pathToViews = HostingEnvironment.MapPath(@"\Views");
+    var pathToFrontendCustomWebFormsControls = HostingEnvironment.MapPath(@"\Frontend\Custom\Web\Forms\Controls");
+
+    AllFunctions = new Dictionary<string, string>();
+
+    foreach (var function in Data.Get<IInlineFunction>())
+    {
+        AllFunctions.Add(String.Format("{0}.{1}", function.Namespace, function.Name), "C# Inline");
+    }
+
+    foreach (var function in Data.Get<IMethodBasedFunctionInfo>())
+    {
+        AllFunctions.Add(String.Format("{0}.{1}", function.Namespace, function.UserMethodName), "C# External");
+    }
+
+    // IPagePlaceholderContent
+    FunctionsInPagePlaceholderContents = new List<FunctionsInPagePlaceholderContent>();
+    GetFunctionsInPagePlaceHolderContent(PublicationScope.Published);
+    GetFunctionsInPagePlaceHolderContent(PublicationScope.Unpublished);
+
+    var functionsInUse = FunctionsInPagePlaceholderContents
+        .GroupBy(g => new { g.PageId, g.PlaceHolderId, g.FunctionName, g.FunctionCode, g.FunctionType })
+        .Select(f => new { f.Key.PageId, f.Key.PlaceHolderId, f.First().PublicationScope, f.Key.FunctionName, f.Key.FunctionCode, f.Key.FunctionType, Page = PageManager.GetPageById(f.Key.PageId) })
+        .Select(f => new { f.PageId, f.PlaceHolderId, f.PublicationScope, f.FunctionName, f.FunctionCode, f.FunctionType, Url = f.Page != null ? PageUrls.BuildUrl(f.Page).Replace("/c1mode(unpublished)", "") : String.Format("Unknown URL ({0})", f.PageId) })
+        .Select(f => new FunctionsInUse(f.FunctionType, String.Format("<a href=\"/page({0}){1}\">{2}</a> : {3}{4}", f.PageId, (f.PublicationScope == PublicationScope.Published ? String.Empty : "/c1mode(unpublished)"), String.IsNullOrEmpty(f.Url) ? "/" : f.Url, f.PlaceHolderId, (f.PublicationScope == PublicationScope.Published ? String.Empty : " : unpublished")), f.FunctionName, f.FunctionCode))
+        .ToList();
+
+    // INamedFunctionCall
+    var namedFunctionCalls = Data.Get<INamedFunctionCall>();
+    foreach (var xsltFunction in Data.Get<IXsltFunction>())
+    {
+        var xsltFunctionId = xsltFunction.Id;
+        var functionName = String.Format("{0}.{1}", xsltFunction.Namespace, xsltFunction.Name);
+
+        var functionCalls = namedFunctionCalls.Where(f => f.XsltFunctionId == xsltFunctionId);
+
+        var functionCallsInUse = functionCalls
+            .Select(functionCall => functionCall.SerializedFunction.Replace(" xmlns:f=\"http://www.composite.net/ns/function/1.0\"", String.Empty))
+            .Select(functionCode => new FunctionsInUse("XSLT Function Call", functionName, GetTagFunctionName(functionCode), functionCode));
+
+        functionsInUse.AddRange(functionCallsInUse);
+    }
+
+    //IPageTemplate
+    var pathToTemplateFiles = Path.Combine(pathToAppData, "PageTemplates");
+    functionsInUse.AddRange(GetFunctionsInFiles(pathToTemplateFiles, "*.*", SearchOption.AllDirectories, false));
+
+    //Razor
+    var pathToRazorFiles = Path.Combine(pathToAppData, "Razor");
+    functionsInUse.AddRange(GetFunctionsInFiles(pathToRazorFiles, "*.cshtml", SearchOption.AllDirectories, false));
+
+    //Xslt
+    var pathToXsltFiles = Path.Combine(pathToAppData, "Xslt");
+    functionsInUse.AddRange(GetFunctionsInFiles(pathToXsltFiles, "*.xsl", SearchOption.AllDirectories, false));
+
+    //UserControls
+    var pathToUserControls = Path.Combine(pathToAppData, "UserControls");
+    functionsInUse.AddRange(GetFunctionsInFiles(pathToUserControls, "*.*", SearchOption.AllDirectories, false));
+
+    //FormBuilder
+    var pathToFormBuilder = Path.Combine(pathToAppData, "FormBuilder");
+    functionsInUse.AddRange(GetFunctionsInFiles(pathToFormBuilder, "DynamicDefinition.xml", SearchOption.AllDirectories, true));
+
+    //MVC Views
+    functionsInUse.AddRange(GetFunctionsInFiles(pathToViews, "*.cshtml", SearchOption.AllDirectories, false));
+
+    //User Control
+    functionsInUse.AddRange(GetFunctionsInFiles(pathToFrontendCustomWebFormsControls, "*.ascx", SearchOption.AllDirectories, false));
+
+    //Teasers: IPageTeaserFreeFormat
+    var typePageTeaserFreeFormat = Type.GetType("CompositeC1Contrib.Teasers.Data.Types.IPageTeaserFreeFormat, CompositeC1Contrib.Teasers");
+    if (typePageTeaserFreeFormat != null)
+    {
+        var pageTeaserFreeFormats = DataFacade.GetData(typePageTeaserFreeFormat);
+
+        var props = typePageTeaserFreeFormat.GetPropertiesRecursively();
+
+        var contentPropertyInfo = props.FirstOrDefault(p => p.Name == "Content");
+        var pageIdPropertyInfo = props.FirstOrDefault(p => p.Name == "PageId");
+        var namePropertyInfo = props.FirstOrDefault(p => p.Name == "Name");
+
+        foreach (var pageTeaserFreeFormat in pageTeaserFreeFormats)
+        {
+            var content = (string)contentPropertyInfo.GetValue(pageTeaserFreeFormat, null);
+
+            content = MinifyCode(content);
+
+            if (!content.Contains("<f:function name=\""))
+            {
+                continue;
+            }
+
+            var pageId = (Guid)pageIdPropertyInfo.GetValue(pageTeaserFreeFormat, null);
+            var name = (string)namePropertyInfo.GetValue(pageTeaserFreeFormat, null);
+            functionsInUse.AddRange(GetFunctionsByTag(content).Select(foundFunction => new FunctionsInUse("Teaser (page)", String.Format("<a href=\"page({0})\">{1}</a> : {2}", pageId, PageUrls.BuildUrl(PageManager.GetPageById(pageId)).Replace("/c1mode(unpublished)", ""), name), foundFunction.FunctionName, foundFunction.FunctionCode)));
+        }
+    }
+
+    //Teasers: ISharedTeaserFreeFormat
+    var typeSharedTeaserFreeFormat = Type.GetType("CompositeC1Contrib.Teasers.Data.Types.ISharedTeaserFreeFormat, CompositeC1Contrib.Teasers");
+    var typeSharedTeaserGroup = Type.GetType("CompositeC1Contrib.Teasers.Data.Types.ISharedTeaserGroup, CompositeC1Contrib.Teasers");
+    if (typeSharedTeaserFreeFormat != null && typeSharedTeaserGroup != null)
+    {
+        var sharedTeaserGroups = DataFacade.GetData(typeSharedTeaserGroup);
+        var groupProps = typeSharedTeaserGroup.GetProperties();
+        var idPropertyInfo = groupProps.FirstOrDefault(p => p.Name == "Id");
+        var titlePropertyInfo = groupProps.FirstOrDefault(p => p.Name == "Title");
+
+        var groups = new Dictionary<Guid, string>();
+        foreach (var group in sharedTeaserGroups)
+        {
+            var id = (Guid)idPropertyInfo.GetValue(group, null);
+            var title = (string)titlePropertyInfo.GetValue(group, null);
+            groups.Add(id, title);
+        }
+
+        var sharedTeaserFreeFormats = DataFacade.GetData(typeSharedTeaserFreeFormat);
+        var props = typeSharedTeaserFreeFormat.GetPropertiesRecursively();
+        var contentPropertyInfo = props.FirstOrDefault(p => p.Name == "Content");
+        var groupPropertyInfo = props.FirstOrDefault(p => p.Name == "TeaserGroup");
+        var namePropertyInfo = props.FirstOrDefault(p => p.Name == "Name");
+
+        foreach (var sharedTeaserFreeFormat in sharedTeaserFreeFormats)
+        {
+            var content = (string)contentPropertyInfo.GetValue(sharedTeaserFreeFormat, null);
+
+            content = MinifyCode(content);
+
+            if (!content.Contains("<f:function name=\""))
+            {
+                continue;
+            }
+
+            var teaserGroup = (Guid)groupPropertyInfo.GetValue(sharedTeaserFreeFormat, null);
+            var name = (string)namePropertyInfo.GetValue(sharedTeaserFreeFormat, null);
+            functionsInUse.AddRange(GetFunctionsByTag(content).Select(foundFunction => new FunctionsInUse("Teaser (shared)", String.Format("{0} -> {1}", groups.First(f => f.Key == teaserGroup).Value, name), foundFunction.FunctionName, foundFunction.FunctionCode)));
+        }
+    }
+
+    //Order
+    var orderBy = Request.QueryString["orderby"];
+    Func<FunctionsInUse, Object> orderByFunc;
+
+    switch (orderBy)
+    {
+        case "SourceType":
+            orderByFunc = sl => sl.SourceType;
+            break;
+        case "Description":
+            orderByFunc = sl => sl.Description;
+            break;
+        case "FunctionType":
+            orderByFunc = sl => sl.FunctionType;
+            break;
+        case "FunctionCode":
+            orderByFunc = sl => sl.FunctionCode;
+            break;
+        default:
+            orderByFunc = sl => sl.FunctionName;
+            break;
+    }
+
+    //Filter
+    var onlySourceType = Request.QueryString["sourceType"];
+    var onlyFunctionType = Request.QueryString["functionType"];
+    var onlyFunctionName = Request.QueryString["functionname"];
+
+    //Add function type to FunctionsInUse
+    functionsInUse = functionsInUse.Select(f => new FunctionsInUse(f.SourceType, f.Description, f.FunctionName, AllFunctions.Any(a => a.Key == f.FunctionName) ? AllFunctions.Single(a => a.Key == f.FunctionName).Value : f.FunctionName.StartsWith("Composite.") ? "Composite" : "Unknown", f.FunctionCode)).ToList();
+
+    //Match FunctionInUse with AllFunctions
+    var functionOptions = functionsInUse
+        .GroupBy(g => g.FunctionName)
+        .Select(f => new { FunctionName = f.Key, Count = f.Count() })
+        .Select(f => new FunctionOption(AllFunctions.ContainsKey(f.FunctionName) ? AllFunctions.FirstOrDefault(a => a.Key == f.FunctionName).Value : (f.FunctionName.StartsWith("Composite.") || f.FunctionName.EndsWith("Xml")) ? "Composite" : "Unknown", f.FunctionName, f.Count))
+        .ToList();
+
+    foreach (var function in AllFunctions.Where(function => functionOptions.All(f => f.FunctionName != function.Key)))
+    {
+        functionOptions.Add(new FunctionOption(function.Value, function.Key, 0));
+    }
+
+    var sourceTypeOptions = functionsInUse.Select(f => f.SourceType).Distinct().ToList();
+    var functionTypes = functionOptions.Select(f => f.FunctionType).Distinct().ToList();
+}
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>Functions in use</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <div class="fixed">
+        <div class="box">
+            <form>
+                <div><b>Source types</b> (@sourceTypeOptions.Count())</div>
+                <select name="sourceType" onchange="this.form.submit();" style="width: 200px;">
+                    <option value=""></option>
+                    @foreach (var sourceType in sourceTypeOptions)
+                    {
+                        <option value="@sourceType" @(sourceType == onlySourceType ? " selected=\"selected\"" : "")>@sourceType (@functionsInUse.Count(f => f.SourceType == sourceType))</option>
+                    }
+                </select>
+                <div><b>Function types</b> (@functionTypes.Count())</div>
+                <select name="functionType" onchange="this.form.submit();" style="width: 200px;">
+                    <option value=""></option>
+                    @foreach (var functionType in functionTypes)
+                    {
+                        <option value="@functionType" @(functionType == onlyFunctionType ? " selected=\"selected\"" : "")>@functionType (@functionsInUse.Count(f => f.FunctionType == functionType))</option>
+                    }
+                </select>
+            </form>
+        </div>
+        <div class="box">
+            @foreach (var functionType in functionTypes)
+            {
+                var type = functionType;
+                var functionTypeOptions = functionOptions.Where(f => f.FunctionType == type).OrderBy(o => o.FunctionName);
+                <form>
+                    <div><b>@type functions</b> (@functionTypeOptions.Count())</div>
+                    <select name="functionname" onchange=" this.form.submit();" style="width: 200px;">
+                        <option value=""></option>
+                        @foreach (var function in functionTypeOptions)
+                        {
+                            <option value="@function.FunctionName" @(function.FunctionName == onlyFunctionName ? " selected=\"selected\"" : String.Empty) @(function.Count == 0 ? " disabled=\"disabled\"" : String.Empty)>@function.FunctionName (@function.Count)</option>
+                        }
+                    </select>
+                </form>
+            }
+        </div>
+    </div>
+
+    @if (functionsInUse.Any())
+    {
+        <table class="style-01">
+            <tr>
+                <th>Source&#160;type&#160;<a href="?orderby=SourceType">&#8659;</a></th>
+                <th>Description&#160;<a href="?orderby=Description">&#8659;</a></th>
+                <th>Function&#160;name&#160;<a href="?orderby=FunctionName">&#8659;</a></th>
+                <th>Function&#160;type&#160;<a href="?orderby=FunctionType">&#8659;</a></th>
+                <th>Function&#160;code&#160;<a href="?orderby=FunctionCode">&#8659;</a></th>
+            </tr>
+            @foreach (var function in functionsInUse.Where(f => (String.IsNullOrEmpty(onlySourceType) || f.SourceType == onlySourceType) && (String.IsNullOrEmpty(onlyFunctionType) || f.FunctionType == onlyFunctionType) && (String.IsNullOrEmpty(onlyFunctionName) || f.FunctionName == onlyFunctionName)).OrderBy(orderByFunc).ThenBy(o => o.Description))
+            {
+                var codeLines = function.FunctionCode.Replace("><", ">|<").Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
+                <tr>
+                    <td>@function.SourceType</td>
+                    <td>@Html.Raw(function.Description)</td>
+                    <td>@function.FunctionName</td>
+                    <td>@function.FunctionType</td>
+                    <td>
+                        @foreach (var line in codeLines)
+                        {@line<br />}
+                    </td>
+                </tr>
+            }
+        </table>
+    }
+</body>
+</html>
+
+@functions
+{
+
+    public class FunctionsInPagePlaceholderContent
+    {
+        public readonly Guid PageId;
+        public readonly PublicationScope PublicationScope;
+        public readonly string PlaceHolderId;
+        public readonly string FunctionName;
+        public readonly string FunctionCode;
+        public readonly string FunctionType;
+
+        public FunctionsInPagePlaceholderContent(Guid pageId, PublicationScope publicationScope, string placeHolderId, string functionName, string functionCode, string functionType)
+        {
+            PageId = pageId;
+            PublicationScope = publicationScope;
+            PlaceHolderId = placeHolderId;
+            FunctionName = functionName;
+            FunctionCode = functionCode;
+            FunctionType = functionType;
+        }
+    }
+
+    public class FoundFunction
+    {
+        public readonly string FunctionName;
+        public readonly string FunctionCode;
+
+        public FoundFunction(string functionName, string functionCode)
+        {
+            FunctionName = functionName;
+            FunctionCode = functionCode;
+        }
+    }
+
+    public class FunctionsInUse
+    {
+        public readonly string SourceType;
+        public readonly string Description;
+        public readonly string FunctionName;
+        public readonly string FunctionType;
+        public readonly string FunctionCode;
+
+        public FunctionsInUse(string sourceType, string description, string functionName, string functionCode)
+        {
+            SourceType = sourceType;
+            Description = description;
+            FunctionName = functionName;
+            FunctionCode = functionCode;
+        }
+
+        public FunctionsInUse(string sourceType, string description, string functionName, string functionType, string functionCode)
+        {
+            SourceType = sourceType;
+            Description = description;
+            FunctionName = functionName;
+            FunctionType = functionType;
+            FunctionCode = functionCode;
+        }
+    }
+
+    public class FunctionOption
+    {
+        public readonly string FunctionType;
+        public readonly string FunctionName;
+        public readonly int Count;
+
+        public FunctionOption(string functionType, string functionName, int count)
+        {
+            FunctionType = functionType;
+            FunctionName = functionName;
+            Count = count;
+        }
+    }
+}

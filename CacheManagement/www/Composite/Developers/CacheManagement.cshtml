@@ -1,0 +1,140 @@
+﻿@inherits Composite.AspNet.Razor.RazorFunction
+
+@using System.Web.Hosting
+
+@{
+    var action = Request.Form["Action"];
+    var selectedKeys = Request.Form.GetValues("Key");
+    var stringStarts = Request.QueryString.GetValues("StringStart");
+    var defaultStringStarts = new[] { "__", "Compiled", "CreateCustomKey", "ShowMedia.ashx ", "System." };
+
+    var hide = new List<string>();
+
+    if (Request.QueryString["Action"] == "Hide")
+    {
+        if (stringStarts != null)
+        {
+            hide.AddRange(stringStarts.ToList());
+        }
+    }
+    else
+    {
+        hide.AddRange(defaultStringStarts.ToList());
+    }
+
+    if (action == "Delete" && selectedKeys != null)
+    {
+        foreach (var key in selectedKeys)
+        {
+            HostingEnvironment.Cache.Remove(key.Replace("|", ","));
+        }
+    }
+
+    var keys = new List<string>();
+    var enumerator = HostingEnvironment.Cache.GetEnumerator();
+
+    while (enumerator.MoveNext())
+    {
+        var key = enumerator.Key.ToString();
+        keys.Add(key);
+    }
+
+    var startStrings = keys
+        .Where(f => f.Contains(" "))
+        .Select(f => f.Substring(0, f.IndexOf(' ') + 1))
+        .GroupBy(f => f)
+        .Where(f => f.Count() > 1)
+        .Select(g => g.Key)
+        .ToList();
+
+    startStrings.AddRange(defaultStringStarts.Where(f => keys.Any(k => k.StartsWith(f))));
+
+    startStrings = startStrings.Distinct().ToList();
+
+    foreach (var key in hide.SelectMany(s => keys.Where(f => f.StartsWith(s)).ToList()))
+    {
+        keys.Remove(key);
+    }
+}
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>Cache management</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <h1>Cache management</h1>
+    <form id="cache-management-form" method="POST" style="float: left; margin-right: 20px;">
+        <table class="style-01">
+            <tr>
+                <th>Delete</th>
+                <th>Key</th>
+            </tr>
+            @foreach (var key in keys.OrderBy(o => o))
+            {
+                <tr>
+                    <td class="center no-padding"><input type="checkbox" name="Key" value="@key.Replace(",", "|")" /></td>
+                    <td>@key</td>
+                </tr>
+            }
+            <tr>
+                <th>Select</th>
+                <th>
+                    <input type="button" value="All" onclick="toggleCheckboxes(true);" />
+                    <input type="button" value="None" onclick="toggleCheckboxes(false);" />
+                    <select name="StartString" onchange="checkCheckboxes(this.options[this.selectedIndex].value)">
+                        <option value="">All keys starting with</option>
+                        @foreach (var startString in startStrings.Where(f => !hide.Contains(f)).OrderBy(o => o))
+                        {
+                            <option value="@startString.Replace(",", "|")">@startString</option>
+                        }
+                    </select>
+                </th>
+            </tr>
+            <tr>
+                <th>Action</th>
+                <th><input type="submit" name="Action" value="Delete" /></th>
+            </tr>
+        </table>
+    </form>
+    <form method="GET" style="float: left;">
+        <table class="style-01">
+            <tr>
+                <th>Hide</th>
+                <th>Starts with</th>
+            </tr>
+            @foreach (var startString in startStrings.OrderBy(o => o))
+            {
+                <tr>
+                    <td class="center no-padding"><input type="checkbox" name="StringStart" value="@startString.Replace(",", "|")" @(hide.Contains(startString) ? " checked=\"checked\"" : String.Empty) /></td>
+                    <td>@startString</td>
+                </tr>
+            }
+            <tr>
+                <th>Action</th>
+                <th><input type="submit" name="Action" value="Hide" /></th>
+            </tr>
+        </table>
+    </form>
+    <script>
+        var myform = document.getElementById('cache-management-form');
+        var inputTags = myform.getElementsByTagName('input');
+
+        function toggleCheckboxes(toggle) {
+            for (var i = 0, length = inputTags.length; i < length; i++) {
+                if (inputTags[i].type == 'checkbox') {
+                    inputTags[i].checked = toggle;
+                }
+            }
+        }
+
+        function checkCheckboxes(s) {
+            for (var i = 0, length = inputTags.length; i < length; i++) {
+                if (inputTags[i].type == 'checkbox') {
+                    inputTags[i].checked = (inputTags[i].value.lastIndexOf(s, 0) === 0);
+                }
+            }
+        }
+    </script>
+</body>
+</html>

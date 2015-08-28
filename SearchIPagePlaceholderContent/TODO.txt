@@ -1,0 +1,3 @@
+It would be nice if a click on a search result gave you the same options as when you browse a page (like locating the page in the tree and editing it)
+
+It is currently not possible to search for "<h1>" - some of the characters are "unsafe"

@@ -1,0 +1,117 @@
+﻿@inherits Composite.AspNet.Razor.RazorFunction
+
+@using Composite.Data.Types
+
+@{
+    var orderBy = Request.QueryString["orderby"];
+
+    Func<IUser, Object> orderByFunc;
+
+    switch (orderBy)
+    {
+        case "Username":
+            orderByFunc = sl => sl.Username;
+            break;
+        case "Group":
+            orderByFunc = sl => sl.Group;
+            break;
+        case "Name":
+            orderByFunc = sl => sl.Name;
+            break;
+        case "Email":
+            orderByFunc = sl => sl.Email;
+            break;
+        default:
+            orderByFunc = sl => sl.Username;
+            break;
+    }
+
+    var userSettings = Data.Get<IUserSettings>();
+    var userActiveLocale = Data.Get<IUserActiveLocale>();
+
+    var users = Data.Get<IUser>()
+        .OrderBy(orderByFunc)
+        .ThenBy(o => o.Username)
+        .Select(u =>
+            new
+            {
+                User = u,
+                Settings = userSettings.First(f => f.Username == u.Username),
+                ActiveLocale = userActiveLocale.Where(f => f.Username == u.Username).Select(f => f.CultureName)
+            }
+        )
+        .Select(f =>
+            new
+            {
+                f.User.Username,
+                f.User.Group,
+                f.User.Name,
+                f.User.Email,
+                f.Settings.CurrentActiveLocaleCultureName,
+                f.Settings.C1ConsoleUiLanguage,
+                f.Settings.CultureName,
+                f.Settings.ForeignLocaleCultureName,
+                f.ActiveLocale,
+            }
+        )
+        .ToList();
+
+    var systemActiveLocales = Data.Get<ISystemActiveLocale>().Count();
+
+    const string delimeter = ", ";
+}
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>User settings</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <h1>User settings</h1>
+    <table class="style-01" style="float: left;">
+        <tr>
+            <td colspan="@(systemActiveLocales > 1 ? 5 : 4)" class="ghosted">General settings</td>
+            <td colspan="2" class="ghosted">C1 Console Localization</td>
+            @if (systemActiveLocales > 1)
+            {
+                <td>Data language access</td>
+            }
+        </tr>
+        <tr>
+            <th>Username <a href="?orderby=Username">&#8659;</a></th>
+            <th>Folder <a href="?orderby=Group">&#8659;</a></th>
+            <th>Name <a href="?orderby=Name">&#8659;</a></th>
+            <th>Email <a href="?orderby=Email">&#8659;</a></th>
+            @if (systemActiveLocales > 1)
+            {
+                <th>Active content language</th>
+            }
+            <th>Regional settings</th>
+            <th>Language</th>
+            @if (systemActiveLocales > 1)
+            {
+                <th>Data languages</th>
+            }
+        </tr>
+        @foreach (var u in users)
+        {
+            <tr>
+                <td id="id-@u.Username"><a href="UserSetup.cshtml#id-@u.Username">@u.Username</a></td>
+                <td>@u.Group</td>
+                <td>@u.Name</td>
+                <td>@u.Email</td>
+                @if (systemActiveLocales > 1)
+                {
+                    <td>@u.CurrentActiveLocaleCultureName</td>
+                }
+                <td>@u.CultureName</td>
+                <td>@u.C1ConsoleUiLanguage</td>
+                @if (systemActiveLocales > 1)
+                {
+                    <td>@u.ActiveLocale.Aggregate((i, j) => i + delimeter + j)</td>
+                }
+            </tr>
+        }
+    </table>
+</body>
+</html>

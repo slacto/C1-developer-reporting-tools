@@ -1,0 +1,152 @@
+﻿@using Composite.Data
+@using Composite.Data.Types
+@using FSD.Data.Types
+
+@functions
+{
+    public static List<IPageMetaDataDefinition> MetaDataDefinitions;
+    public static List<string> Messages;
+    public static List<IData> ToDelete;
+    public static List<IData> ToUpdate;
+
+    static void FixData(Type dataType, string startsWith, int shortIdLength)
+    {
+        ToUpdate = new List<IData>();
+        ToDelete = new List<IData>();
+        MetaDataDefinitions = DataFacade.GetData<IPageMetaDataDefinition>().Where(f => f.Name.StartsWith(startsWith)).ToList();
+
+        List<IPageMetaData> unpublishedRows;
+        List<IPageMetaData> publishedRows;
+
+        using (new DataScope(PublicationScope.Unpublished))
+        {
+            unpublishedRows = DataFacade.GetData(dataType).Cast<IPageMetaData>().ToList();
+        }
+
+        using (new DataScope(PublicationScope.Published))
+        {
+            publishedRows = DataFacade.GetData(dataType).Cast<IPageMetaData>().ToList();
+        }
+
+        EvaluateRow(unpublishedRows, startsWith, shortIdLength);
+        EvaluateRow(publishedRows, startsWith, shortIdLength);
+
+        if (ToUpdate.Any())
+        {
+            Messages.Add(String.Format("Updating: {0} record(s) of type {1}", ToUpdate.Count, dataType.FullName));
+            DataFacade.Update(ToUpdate);
+        }
+
+        if (ToDelete.Any())
+        {
+            Messages.Add(String.Format("Deleting: {0} record(s) of type {1}", ToDelete.Count, dataType.FullName));
+            DataFacade.Delete<IData>(ToDelete);
+        }
+    }
+
+    private static void EvaluateRow(List<IPageMetaData> rows, string startsWith, int shortIdLength)
+    {
+        foreach (var r in rows)
+        {
+            var row = r;
+            var fieldName = row.FieldName;
+            var shortId = fieldName.Replace(startsWith, "");
+            var rowIsValid = false;
+
+            if (shortId.Length != shortIdLength)
+            {
+                Messages.Add(String.Format("FieldName {0} is invalid", fieldName));
+            }
+
+            var pageId = row.PageId;
+
+            do
+            {
+                if (pageId.ToString().StartsWith(shortId))
+                {
+                    rowIsValid = true;
+                    break;
+                }
+
+                pageId = PageManager.GetParentId(pageId);
+            } while (pageId != default(Guid));
+
+            if (rowIsValid)
+                continue;
+
+            // this row is in the wrong location!
+            // check for duplicate row same page but on other FieldName
+            if (rows.Any(f => f.PageId == row.PageId && f.FieldName != fieldName))
+            {
+                ToDelete.Add(row);
+            }
+
+            // the page was moved and not saved again so give row a new FieldName (if a suitable is found)
+            pageId = row.PageId;
+
+            do
+            {
+                var pId = pageId;
+                var otherMetaDateDefinition = MetaDataDefinitions.FirstOrDefault(f => f.DefiningItemId == pId && f.Name != fieldName);
+
+                if (otherMetaDateDefinition != null)
+                {
+                    row.FieldName = otherMetaDateDefinition.Name;
+                    ToUpdate.Add(row);
+                    rowIsValid = true;
+                    break;
+                }
+
+                pageId = PageManager.GetParentId(pageId);
+            } while (pageId != default(Guid));
+
+            if (rowIsValid)
+                continue;
+            
+            // no alternative FieldName was found
+            ToDelete.Add(row);
+        }
+    }
+}
+
+@{
+    Messages = new List<string>();
+
+    FixData(typeof(IPageNews), "News ", 6);
+}
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>Fix MetaData using ancestor shortId in FieldName</title>
+    <link rel="stylesheet" href="/Frontend/css/all.min.css" />
+    <style>
+        body {
+            margin: 1em;
+        }
+
+        th {
+            text-align: left;
+        }
+
+        .True {
+            background-color: #f99;
+        }
+    </style>
+</head>
+<body style="background-color: inherit; text-align: left;">
+    <h1>Fix MetaData using ancestor shortId in FieldName</h1>
+    @if (Messages.Any())
+    {
+        <ul>
+            @foreach (var message in Messages)
+            {
+                <li>@message</li>
+            }
+        </ul>
+    }
+    else
+    {
+        <p>No changes were made.</p>
+    }
+</body>
+</html>

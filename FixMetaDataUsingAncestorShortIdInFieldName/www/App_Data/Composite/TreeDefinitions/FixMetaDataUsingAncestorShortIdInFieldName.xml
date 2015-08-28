@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ElementStructure xmlns="http://www.composite.net/ns/management/trees/treemarkup/1.0" xmlns:f="http://www.composite.net/ns/function/1.0">
+    <ElementStructure.AutoAttachments>
+        <NamedParent Name="PerspectivesRoot" Position="Bottom" />
+    </ElementStructure.AutoAttachments>
+    <ElementRoot ShareRootElementById="true">
+        <Children>
+            <Element Label="Developer Tools" Id="DeveloperToolsPerspective" Icon="unknown">
+                <Children>
+                    <Element Label="Fix dublicate news (news moved from one news archive to another)" Id="FixMetaDataUsingAncestorShortIdInFieldName">
+                        <Actions>
+                            <CustomUrlAction Label="User setup" Url="~/Composite/Developers/FixMetaDataUsingAncestorShortIdInFieldName.cshtml" />
+                        </Actions>
+                    </Element>
+                </Children>
+            </Element>
+        </Children>
+    </ElementRoot>
+</ElementStructure>

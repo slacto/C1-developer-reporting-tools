@@ -1,0 +1,149 @@
+﻿@inherits Composite.AspNet.Razor.RazorFunction
+
+@using System.Text.RegularExpressions
+
+@using Composite.Core.Routing
+@using Composite.Data
+@using Composite.Data.Types
+
+@functions
+{
+    private class Match
+    {
+        public readonly string Url;
+        public readonly string PlaceHolderId;
+        public readonly string Content;
+
+        public Match(string url, string placeHolderId, string content)
+        {
+            Url = url;
+            PlaceHolderId = placeHolderId;
+            Content = content;
+        }
+    }
+
+    private static readonly Regex RegexForTags = new Regex(@">s+<", RegexOptions.Compiled);
+    private static readonly Regex RegexForBreaks = new Regex(@">[\s]*<", RegexOptions.Compiled);
+}
+
+@{
+    var q = Request.QueryString["q"];
+    int charsBefore;
+    int charsAfter;
+
+    if (!int.TryParse(Request.QueryString["charsBefore"], out charsBefore)) { charsBefore = 10; }
+    if (!int.TryParse(Request.QueryString["charsAfter"], out charsAfter)) { charsAfter = 20; }
+
+    var casesensitivity = Request.QueryString["casesensitivity"];
+    var scope = Request.QueryString["scope"];
+    var publicationScope = scope == "Unpublished" ? PublicationScope.Unpublished : PublicationScope.Published;
+
+    var matches = new List<Match>();
+
+    if (!String.IsNullOrEmpty(q))
+    {
+        using (var data = new DataConnection(publicationScope))
+        {
+            var placeholderContents = casesensitivity == "sensitive" ? data.Get<IPagePlaceholderContent>().Where(c => c.Content.Contains(q)) : data.Get<IPagePlaceholderContent>().Where(c => c.Content.ToLower().Contains(q.ToLower()));
+
+            foreach (var pc in placeholderContents)
+            {
+                var page = PageManager.GetPageById(pc.PageId);
+                if (page == null) { continue; }
+
+                var url = PageUrls.BuildUrl(page);
+                if (String.IsNullOrEmpty(url)) { continue; }
+
+                var content = RegexForTags.Replace(pc.Content, "> <");
+                content = RegexForBreaks.Replace(content, "><").Trim();
+
+                matches.Add(new Match(url, pc.PlaceHolderId, content));
+            }
+        }
+    }
+}
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>Search IPagePlaceholderContent</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <form method="get">
+        <table class="style-01">
+            <tr>
+                <th>Search string</th>
+                <th>Case sensitivity</th>
+                <th>Chars before</th>
+                <th>Chars after</th>
+                <th>Publication scope</th>
+                <th class="ghosted-cell"></th>
+            </tr>
+            <tr class="no-padding" style="vertical-align: middle;">
+                <td class="ghosted-cell center"><input name="q" value="@q" style="width: 170px;" /></td>
+                <td class="ghosted-cell center">
+                    <select id="casesensitivity" name="casesensitivity">
+                        <option value="insensitive" @(casesensitivity == "insensitive" ? " selected=\"selected\"" : "")>Ignore case</option>
+                        <option value="sensitive" @(casesensitivity == "sensitive" ? " selected=\"selected\"" : "")>Match case</option>
+                    </select>
+                </td>
+                <td class="ghosted-cell center"><input id="charsBefore" name="charsBefore" value="@charsBefore" style="width: 80px; text-align: right;" /></td>
+                <td class="ghosted-cell center"><input id="charsAfter" name="charsAfter" value="@charsAfter" style="width: 80px; text-align: right;" /></td>
+                <td class="ghosted-cell center"><select id="scope" name="scope">
+                        <option value="Published" @(publicationScope == PublicationScope.Published ? " selected=\"selected\"" : "")>Published</option>
+                        <option value="Unpublished" @(publicationScope == PublicationScope.Unpublished ? " selected=\"selected\"" : "")>Unpublished</option>
+                    </select></td>
+                <td class="ghosted-cell"><input type="Submit" value="Search" /></td>
+            </tr>
+        </table>
+    </form>
+
+    @if (matches.Any())
+    {
+        <p>@matches.Count() matches found on "@q"</p>
+        <table class="style-01">
+            <tr>
+                <th style="text-align: left;">URL</th>
+                <th style="text-align: left;">Placeholder</th>
+                <th style="text-align: left;">Usage</th>
+            </tr>
+            @foreach (var match in matches.OrderBy(f => f.Url))
+            {
+                var content = match.Content;
+                var index = casesensitivity == "sensitive" ? content.IndexOf(q, StringComparison.Ordinal) : content.ToLower().IndexOf(q.ToLower(), StringComparison.Ordinal);
+                var strings = new List<string[]>();
+
+                do
+                {
+                    var start1 = index - charsBefore > -1 ? index - charsBefore : 0;
+                    var length1 = index - start1;
+                    var start2 = index + q.Length;
+                    var length2 = content.Substring(start2).Length > charsAfter ? charsAfter : content.Substring(start2).Length;
+
+                    strings.Add(new[] { content.Substring(start1, length1), content.Substring(start1 + length1, q.Length), content.Substring(start2, length2) });
+                    index = casesensitivity == "sensitive" ? content.IndexOf(q, index + 1, StringComparison.Ordinal) : content.ToLower().IndexOf(q.ToLower(), index + 1, StringComparison.Ordinal);
+                }
+                while (index > 0);
+
+                <tr>
+                    <td style="vertical-align: top;"><a href="@match.Url">@match.Url</a></td>
+                    <td style="vertical-align: top;">@match.PlaceHolderId</td>
+                    <td style="vertical-align: top; font-family: monospace; white-space: nowrap">
+                        @foreach (var strArr in strings)
+                        {
+                            @strArr[0]
+                            @Html.Raw("<b>" + strArr[1] + "</b>")
+                            @strArr[2]
+                            @Html.Raw("<br/>")
+                        }
+                    </td>
+                </tr>
+            }
+        </table>
+    }
+    else if (!String.IsNullOrEmpty(q))
+    {
+        <p>No matches found on "@q"</p>
+    }
+</body>
+</html>

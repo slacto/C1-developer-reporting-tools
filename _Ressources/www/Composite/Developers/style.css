@@ -1,0 +1,104 @@
+﻿body {
+    background: #f0f0f0;
+    margin: 1em;
+    text-align: left;
+    font-family: "Segoe UI", sans-serif;
+    font-size: 12px;
+    color: #222;
+}
+
+h1 {
+    font-size: 14px;
+}
+
+h2 {
+    font-size: 13px;
+}
+
+a {
+    color: #600;
+    text-decoration: none;
+}
+
+.style-01 {
+    margin-bottom: 20px;
+    border-collapse: collapse;
+}
+
+thead tr {
+    vertical-align: bottom;
+}
+
+tr {
+    vertical-align: top;
+}
+
+th, td {
+    background: #fff;
+    border: 1px solid #999;
+    font-size: 12px;
+    line-height: 14px;
+    padding: 1px 6px 2px;
+}
+
+.ghosted-cell {
+    border: none;
+    background-color: #f0f0f0;
+}
+
+.no-padding, .no-padding td {
+    padding: 0;
+}
+
+th {
+    text-align: left;
+    color: #222;
+}
+
+p {
+    font-size: 12px;
+    line-height: 14px;
+}
+
+ul {
+    margin: 0 0 6px;
+    padding: 0 0 0 18px;
+}
+
+.ghosted {
+    color: #999;
+}
+
+.center {
+    text-align: center;
+}
+
+.normal {
+    font-weight: normal;
+}
+
+.smaller {
+    font-size: smaller;
+}
+
+.highlight {
+    background: #ff3;
+}
+
+.error {
+    background: #f66;
+}
+
+.fixed {
+    position: fixed;
+    right: 0;
+    top: 10em;
+}
+
+.box {
+    background: yellow;
+    border: 1px solid red;
+    padding: 5px;
+    margin-bottom: 10px;
+    opacity: 0.6;
+}

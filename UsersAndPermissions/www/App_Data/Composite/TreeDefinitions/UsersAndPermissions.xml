@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ElementStructure xmlns="http://www.composite.net/ns/management/trees/treemarkup/1.0" xmlns:f="http://www.composite.net/ns/function/1.0">
+	<ElementStructure.AutoAttachments>
+		<NamedParent Name="PerspectivesRoot" Position="Bottom" />
+	</ElementStructure.AutoAttachments>
+	<ElementRoot ShareRootElementById="true">
+		<Children>
+			<Element Label="Developer Tools" Id="DeveloperToolsPerspective" Icon="unknown">
+				<Children>
+					<Element Label="Users and permissions" Id="UsersAndPermissions">
+						<Actions>
+              <CustomUrlAction Label="User setup" Url="~/Composite/Developers/UserSetup.cshtml" />
+              <CustomUrlAction Label="User settings" Url="~/Composite/Developers/UserSettings.cshtml" />
+              <CustomUrlAction Label="User group setup" Url="~/Composite/Developers/UserGroupSetup.cshtml" />
+            </Actions>
+					</Element>
+				</Children>
+			</Element>
+		</Children>
+	</ElementRoot>
+</ElementStructure>

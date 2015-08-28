@@ -1,0 +1,105 @@
+﻿@using System.Text
+@using System.Web.Hosting
+
+@functions
+{
+    public static List<String> FilePaths;
+
+    // Process all files in the directory passed in, recurse on any directories
+    // that are found, and process the files they contain.
+    private static void ProcessDirectory(string targetDirectory)
+    {
+        // Process the list of files found in the directory.
+        //FilePaths.AddRange(Directory.GetFiles(targetDirectory).ToList());
+        var fileEntries = Directory.GetFiles(targetDirectory);
+        foreach (var file in fileEntries.Where(f => Path.GetExtension(f) == ".cshtml"))
+        {
+            FilePaths.Add(file);
+        }
+
+        // Recurse into subdirectories of this directory.
+        var subdirectoryEntries = Directory.GetDirectories(targetDirectory);
+        foreach (var subdirectory in subdirectoryEntries)
+        {
+            ProcessDirectory(subdirectory);
+        }
+    }
+}
+
+@{
+    var path = HostingEnvironment.MapPath("/App_Data/Razor");
+
+    if (path == null)
+    {
+        return;
+    }
+
+    FilePaths = new List<string>();
+
+    ProcessDirectory(path);
+
+    var fix = Request.QueryString["fix"] == "yes";
+
+    var razorFiles = new Dictionary<string, Encoding>();
+
+    foreach (var filePath in FilePaths)
+    {
+        Encoding encoding;
+        
+        using (var r = new StreamReader(filePath, Encoding.Default))
+        {
+            // Read to get encoding
+            var text = r.ReadToEnd();
+            encoding = r.CurrentEncoding;
+        }
+
+        razorFiles.Add(filePath, encoding);
+    }
+}
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>Razor file encoding</title>
+    <link rel="stylesheet" href="style.css" />
+    <style>
+        body {
+            margin: 1em;
+        }
+
+        th {
+            text-align: left;
+        }
+
+        .True {
+            background-color: #f99;
+        }
+    </style>
+</head>
+<body style="background-color: inherit; text-align: left;">
+    <h1>Razor file encoding</h1>
+    @if (FilePaths.Any())
+    {
+        <table border="1" cellpadding="3" cellspacing="0" style="border-collapse: collapse;">
+            <tr>
+                <th>Razor file</th>
+                <th>Encoding</th>
+            </tr>
+            @foreach (var razorFile in razorFiles)
+            {
+                var filePath = razorFile.Key;
+                var encoding = razorFile.Value;
+                var isUTF8 = Equals(encoding, Encoding.UTF8);
+
+                <tr>
+                    <td>@filePath.Substring(filePath.IndexOf("\\App_Data", StringComparison.Ordinal))</td>
+                    <td class="@(fix || isUTF8 ? String.Empty : "error")">@encoding</td>
+                </tr>
+            }
+        </table>
+    }
+    else
+    {
+        <p>No razor files found!</p>
+    }
+</body>
+</html>

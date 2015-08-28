@@ -1,0 +1,106 @@
+﻿@inherits Composite.AspNet.Razor.RazorFunction
+
+@using Composite.Core.Routing
+@using Composite.Core.Xml
+@using Composite.Data
+@using Composite.Data.Types
+
+@functions
+{
+    private class Invalid
+    {
+        public readonly string Url;
+        public readonly Guid PageId;
+        public readonly string PlaceHolderId;
+        public readonly string Message;
+
+        public Invalid(string url, Guid pageId, string placeHolderId, string message)
+        {
+            Url = url;
+            PageId = pageId;
+            PlaceHolderId = placeHolderId;
+            Message = message;
+        }
+    }
+}
+
+@{
+    var scope = Request.QueryString["scope"];
+    var publicationScope = scope == "Unpublished" ? PublicationScope.Unpublished : PublicationScope.Published;
+
+    var invalidPlaceholders = new List<Invalid>();
+
+    using (var data = new DataConnection(publicationScope))
+    {
+        foreach (var pc in data.Get<IPagePlaceholderContent>())
+        {
+            var page = PageManager.GetPageById(pc.PageId);
+            if (page == null)
+            {
+                continue;
+            }
+
+            var url = PageUrls.BuildUrl(page);
+            if (String.IsNullOrEmpty(url))
+            {
+                continue;
+            }
+
+            try
+            {
+                XhtmlDocument.Parse(pc.Content);
+            }
+            catch (Exception ex)
+            {
+                invalidPlaceholders.Add(new Invalid(url, pc.PageId, pc.PlaceHolderId, ex.Message));
+            }
+        }
+    }
+}
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>Invalid IPagePlaceholderContent</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <form method="get">
+        <table class="style-01">
+            <tr>
+                <th>Publication scope</th>
+                <th class="ghosted-cell"></th>
+            </tr>
+            <tr class="no-padding" style="vertical-align: middle;">
+                <td class="ghosted-cell center"><select id="scope" name="scope">
+                        <option value="Published" @(publicationScope == PublicationScope.Published ? " selected=\"selected\"" : "")>Published</option>
+                        <option value="Unpublished" @(publicationScope == PublicationScope.Unpublished ? " selected=\"selected\"" : "")>Unpublished</option>
+                    </select></td>
+                <td class="ghosted-cell"><input type="Submit" value="Search" /></td>
+            </tr>
+        </table>
+    </form>
+
+    <p>@invalidPlaceholders.Count() invalid content placeholders</p>
+
+    @if (invalidPlaceholders.Any())
+    {
+        <table class="style-01">
+            <tr>
+                <th style="text-align: left;">URL</th>
+                <th style="text-align: left;">Page Id</th>
+                <th style="text-align: left;">Placeholder</th>
+                <th style="text-align: left;">Error message</th>
+            </tr>
+            @foreach (var invalidPlaceholder in invalidPlaceholders.OrderBy(f => f.Url))
+            {
+                <tr>
+                    <td style="vertical-align: top; white-space: nowrap;"><a href="@invalidPlaceholder.Url">@invalidPlaceholder.Url.Replace("/c1mode(unpublished)", "")</a></td>
+                    <td style="vertical-align: top; white-space: nowrap;">@invalidPlaceholder.PageId</td>
+                    <td style="vertical-align: top;">@invalidPlaceholder.PlaceHolderId</td>
+                    <td style="vertical-align: top; font-family: monospace; white-space: nowrap">@invalidPlaceholder.Message</td>
+                </tr>
+            }
+        </table>
+    }
+</body>
+</html>

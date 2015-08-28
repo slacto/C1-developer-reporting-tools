@@ -1,0 +1,91 @@
+﻿@using System.Web.Hosting
+
+@using Composite.AspNet.Razor
+@using Composite.Core.PageTemplates
+@using Composite.Data.Types
+
+@inherits RazorFunction
+
+@{
+    Guid templateId;
+    Guid.TryParse(Request.QueryString["templateId"], out templateId);
+
+    var pages = Data.Get<IPage>();
+    var templates = PageTemplateFacade.GetPageTemplates()
+        .GroupJoin(pages, t => t.Id, p => p.TemplateId, (t, p) => new { t.Id, t.Title, Type = t.GetType().ToString().Replace("Composite.Plugins.PageTemplates.", String.Empty), PageCount = p.Count() })
+        .OrderBy(f => f.Title)
+        .ToList();
+
+    if (templateId == default(Guid))
+    {
+        var templateName = Request.QueryString["templateName"];
+
+        if (!String.IsNullOrEmpty(templateName))
+        {
+            if (templateName.EndsWith(".master"))
+            {
+                templateName = templateName + ".cs";
+            }
+
+            var path = HostingEnvironment.MapPath("~/App_Data/PageTemplates");
+            
+            if (path != null)
+            {
+                var filePath = Path.Combine(path, templateName);
+
+                if (File.Exists(filePath))
+                {
+                    string text;
+                    
+                    using (var reader = new StreamReader(filePath))
+                    {
+                        text = reader.ReadToEnd();
+                    }
+
+                    foreach (var t in templates.Where(t => text.IndexOf(t.Id.ToString(), StringComparison.OrdinalIgnoreCase) > -1))
+                    {
+                        templateId = t.Id;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    var template = templates.SingleOrDefault(f => f.Id == templateId);
+
+    var templatePageUrls = pages
+        .Where(f => f.TemplateId == templateId)
+        .Select(f => Data.SitemapNavigator.GetPageNodeById(f.Id).Url)
+        .OrderBy(f => f);
+}
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>Templates in use</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <h1>Templates in use</h1>
+    <form>
+        <select name="templateId" onchange="this.form.submit();" style="width: 200px;">
+            <option value="">Select a template</option>
+            @foreach (var t in templates)
+            {
+                <option value="@t.Id" @(t.Id == templateId ? " selected=\"selected\"" : "")>@t.Title (@pages.Count(f => f.TemplateId == t.Id) pages)</option>
+            }
+        </select>
+    </form>
+
+    @if (template != null)
+    {
+        <h2>@template.Title : @template.Type.Substring(0, template.Type.IndexOf("."))</h2>
+        <ul>
+            @foreach (var url in templatePageUrls)
+            {
+                <li><a href="@url">@url.Replace("/c1mode(unpublished)", String.Empty)</a></li>
+            }
+        </ul>
+    }
+</body>
+</html>
