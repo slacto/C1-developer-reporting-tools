@@ -1,6 +1,7 @@
-﻿@inherits Composite.AspNet.Razor.RazorFunction
-
+﻿@using Composite.AspNet.Razor
 @using System.Web.Hosting
+
+@inherits RazorFunction
 
 @{
     var action = Request.Form["Action"];

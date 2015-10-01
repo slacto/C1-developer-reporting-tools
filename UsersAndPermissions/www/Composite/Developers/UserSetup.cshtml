@@ -1,9 +1,6 @@
-﻿@inherits Composite.AspNet.Razor.RazorFunction
+﻿@using System.Linq
 
-@using System
-@using System.Collections.Generic
-@using System.Linq
-
+@using Composite.AspNet.Razor
 @using Composite.AspNet.Security
 @using Composite.C1Console.Security
 @using Composite.C1Console.Trees
@@ -16,6 +13,8 @@
 
 @using CompositeC1Contrib.FormBuilder.C1Console.EntityTokens
 @using CompositeC1Contrib.FormBuilder.FunctionProviders
+
+@inherits RazorFunction
 
 @functions
 {

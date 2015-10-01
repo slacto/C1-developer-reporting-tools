@@ -3,6 +3,7 @@
     <ElementStructure.AutoAttachments>
         <NamedParent Name="PerspectivesRoot" Position="Bottom" />
     </ElementStructure.AutoAttachments>
+
     <ElementRoot ShareRootElementById="true">
         <Children>
             <Element Label="Developer Tools" Id="DeveloperToolsPerspective" Icon="unknown">

@@ -1,9 +1,6 @@
-﻿@inherits Composite.AspNet.Razor.RazorFunction
+﻿@using System.Linq
 
-@using System
-@using System.Collections.Generic
-@using System.Linq
-
+@using Composite.AspNet.Razor
 @using Composite.AspNet.Security
 @using Composite.C1Console.Security
 @using Composite.C1Console.Trees
@@ -16,6 +13,8 @@
 
 @using CompositeC1Contrib.FormBuilder.C1Console.EntityTokens
 @using CompositeC1Contrib.FormBuilder.FunctionProviders
+
+@inherits RazorFunction
 
 @functions
 {
@@ -151,13 +150,15 @@
         public string Name { get; set; }
         public List<Folder> Folders { get; set; }
         public List<TokenType> Permissions { get; set; }
+        public List<string> Perspectives { get; set; }
 
-        public UserGroupInfo(Guid id, string name, List<Folder> folders, List<TokenType> permissions)
+        public UserGroupInfo(Guid id, string name, List<Folder> folders, List<TokenType> permissions, List<string> perspectives)
         {
             Id = id;
             Name = name;
             Folders = folders;
             Permissions = permissions;
+            Perspectives = perspectives;
         }
     }
 
@@ -208,7 +209,13 @@
             .Select(f => new TokenType(f.Key.Substring(3), f.Select(t => t[1]).OrderBy(t => t).ToList()))
             .ToList();
 
-        userGroups.Add(new UserGroupInfo(userGroup.Id, userGroup.Name, users, permissions));
+        var perspectives = Data.Get<IUserGroupActivePerspective>()
+            .Where(f => f.UserGroupId == group.Id)
+            .Select(f => EntityTokenSerializer.Deserialize(f.SerializedEntityToken).Id.Replace("Perspective", ""))
+            .OrderBy(f => f)
+            .ToList();
+
+        userGroups.Add(new UserGroupInfo(userGroup.Id, userGroup.Name, users, permissions, perspectives));
     }
 }
 
@@ -239,6 +246,7 @@
             <th>User group</th>
             <th>Users</th>
             <th>Permissions <span class="normal">(Standard is Add, Approve, Delete, Edit, Publish, Read)</span></th>
+            <th>Perspectives</th>
             <th class="ghosted-cell"></th>
         </tr>
         @foreach (var instance in userGroups)
@@ -269,6 +277,12 @@
                                 <li>@Html.Raw(item)</li>
                             }
                         </ul>
+                    }
+                </td>
+                <td>
+                    @foreach (var s in instance.Perspectives)
+                    {
+                        <div>@s</div>
                     }
                 </td>
                 <td class="ghosted-cell"><a href="#">&#65514;</a></td>

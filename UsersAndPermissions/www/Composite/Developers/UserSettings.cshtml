@@ -1,6 +1,7 @@
-﻿@inherits Composite.AspNet.Razor.RazorFunction
-
+﻿@using Composite.AspNet.Razor
 @using Composite.Data.Types
+
+@inherits RazorFunction
 
 @{
     var orderBy = Request.QueryString["orderby"];
