@@ -12,6 +12,9 @@
         case "Username":
             orderByFunc = sl => sl.Username;
             break;
+        case "Group":
+            orderByFunc = sl => sl.Group;
+            break;
         case "Name":
             orderByFunc = sl => sl.Name;
             break;
@@ -23,7 +26,6 @@
             break;
     }
 
-    var userFormLogin = Data.Get<IUserFormLogin>();
     var userSettings = Data.Get<IUserSettings>();
     var userActiveLocale = Data.Get<IUserActiveLocale>();
 
@@ -34,7 +36,6 @@
             new
             {
                 User = u,
-                FormLogin = userFormLogin.First(f => f.UserId == u.Id),
                 Settings = userSettings.First(f => f.Username == u.Username),
                 ActiveLocale = userActiveLocale.Where(f => f.Username == u.Username).Select(f => f.CultureName)
             }
@@ -43,10 +44,9 @@
             new
             {
                 f.User.Username,
+                f.User.Group,
                 f.User.Name,
                 f.User.Email,
-                f.FormLogin.Folder,
-                f.FormLogin.IsLocked,
                 f.Settings.CurrentActiveLocaleCultureName,
                 f.Settings.C1ConsoleUiLanguage,
                 f.Settings.CultureName,
@@ -70,7 +70,7 @@
     <h1>User settings</h1>
     <table class="style-01" style="float: left;">
         <tr>
-            <td colspan="@(systemActiveLocales > 1 ? 6 : 5)" class="ghosted">General settings</td>
+            <td colspan="@(systemActiveLocales > 1 ? 5 : 4)" class="ghosted">General settings</td>
             <td colspan="2" class="ghosted">C1 Console Localization</td>
             @if (systemActiveLocales > 1)
             {
@@ -79,10 +79,9 @@
         </tr>
         <tr>
             <th>Username <a href="?orderby=Username">&#8659;</a></th>
-            <th>Folder</th>
+            <th>Folder <a href="?orderby=Group">&#8659;</a></th>
             <th>Name <a href="?orderby=Name">&#8659;</a></th>
             <th>Email <a href="?orderby=Email">&#8659;</a></th>
-            <th>Locked</th>
             @if (systemActiveLocales > 1)
             {
                 <th>Active content language</th>
@@ -98,10 +97,9 @@
         {
             <tr>
                 <td id="id-@u.Username"><a href="UserSetup.cshtml#id-@u.Username">@u.Username</a></td>
-                <td>@u.Folder</td>
+                <td>@u.Group</td>
                 <td>@u.Name</td>
                 <td>@u.Email</td>
-                <td>@(u.IsLocked ? "Locked": "Open")</td>
                 @if (systemActiveLocales > 1)
                 {
                     <td>@u.CurrentActiveLocaleCultureName</td>
