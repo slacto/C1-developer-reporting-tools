@@ -1,0 +1,308 @@
+﻿@inherits Composite.AspNet.Razor.RazorFunction
+
+@using System.Globalization
+@using System.Text.RegularExpressions
+
+@using Composite.Core.Routing
+@using Composite.Data
+@using Composite.Data.Types
+
+@{
+    _q = Request.QueryString["q"];
+    _casesensitivity = Request.QueryString["casesensitivity"];
+    if (!int.TryParse(Request.QueryString["charsBefore"], out _charsBefore)) { _charsBefore = 10; }
+    if (!int.TryParse(Request.QueryString["charsAfter"], out _charsAfter)) { _charsAfter = 20; }
+
+    var fieldtypes = Request.QueryString.GetValues("fieldtypes");
+    var searchXhtml = false;
+    var searchText = false;
+
+    if (fieldtypes != null)
+    {
+        searchXhtml = fieldtypes.Contains("xhtml");
+        searchText = fieldtypes.Contains("text");
+    }
+
+    if (!String.IsNullOrEmpty(_q) && fieldtypes != null && fieldtypes.Any())
+    {
+        using (var data = new DataConnection(PublicationScope.Published))
+        {
+            if (searchXhtml)
+            {
+                SearchIPagePlaceholderContent(data);
+            }
+            if (searchText)
+            {
+                SearchIPageTexts(data);
+            }
+        }
+        using (var data = new DataConnection(PublicationScope.Unpublished))
+        {
+            if (searchXhtml)
+            {
+                SearchIPagePlaceholderContent(data);
+            }
+            if (searchText)
+            {
+                SearchIPageTexts(data);
+            }
+        }
+
+        _matches = MatchesWithPublicationStatus
+            .GroupBy(g => new { g.Reference, g.SourceType, g.Content })
+            .Select(f => new { f.Key.Reference, f.Key.SourceType, f.Key.Content, f.First().PublicationScope })
+            .Select(f => new Match(f.Reference + (f.PublicationScope == PublicationScope.Unpublished ? " (unpublished)" : null), f.SourceType, f.Content))
+            .ToList();
+
+        using (var data = new DataConnection())
+        {
+            if (searchXhtml)
+            {
+            }
+        }
+    }
+}
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>Search</title>
+    <link rel="stylesheet" href="style.css" />
+    <style>
+        .checkboxlist {
+            background-color: white;
+            border: 1px solid #999;
+            padding: 1px 3px 2px;
+            margin: 0 1px; 
+        }
+
+            .checkboxlist label {
+                display: inline-block;
+            }
+
+            .checkboxlist input {
+                vertical-align: bottom;
+                bottom: 0;
+                margin-bottom: 0;
+            }
+    </style>
+</head>
+<body>
+    <form method="get">
+        <table class="style-01">
+            <tr>
+                <th>Search string</th>
+                <th>Case sensitivity</th>
+                <th>Chars before</th>
+                <th>Chars after</th>
+                <th>Field types</th>
+                <th class="ghosted-cell"></th>
+            </tr>
+            <tr class="no-padding" style="vertical-align: middle;">
+                <td class="ghosted-cell center"><input name="q" value="@_q" style="width: 170px;" /></td>
+                <td class="ghosted-cell center">
+                    <select id="casesensitivity" name="casesensitivity">
+                        <option value="insensitive" @(_casesensitivity == "insensitive" ? " selected=\"selected\"" : "")>Ignore case</option>
+                        <option value="sensitive" @(_casesensitivity == "sensitive" ? " selected=\"selected\"" : "")>Match case</option>
+                    </select>
+                </td>
+                <td class="ghosted-cell center"><input id="charsBefore" name="charsBefore" value="@_charsBefore" style="width: 80px; text-align: right;" /></td>
+                <td class="ghosted-cell center"><input id="charsAfter" name="charsAfter" value="@_charsAfter" style="width: 80px; text-align: right;" /></td>
+                <td class="ghosted-cell center">
+                    <div class="checkboxlist">
+                        <label><input type="checkbox" name="fieldtypes" value="xhtml" checked="@(searchXhtml ? "checked" : null)" />XHTML</label>
+                        <label><input type="checkbox" name="fieldtypes" value="text" checked="@(searchText ? "checked" : null)" />Text</label>
+                    </div>
+                </td>
+                <td class="ghosted-cell"><input type="Submit" value="Search" /></td>
+            </tr>
+        </table>
+    </form>
+
+    @if (_matches.Any())
+    {
+        <p>@_matches.Count() matches found on "@_q"</p>
+        <table class="style-01">
+            <tr>
+                <th style="text-align: left;">Reference</th>
+                <th style="text-align: left;">Source type</th>
+                <th style="text-align: left;">Usage</th>
+            </tr>
+            @foreach (var match in _matches.OrderBy(f => f.SourceType).ThenBy(f => f.Reference))
+            {
+                <tr>
+                    <td style="vertical-align: top;">@Html.Raw(match.Reference)</td>
+                    <td style="vertical-align: top;">@match.SourceType</td>
+                    <td style="vertical-align: top; font-family: monospace; white-space: nowrap">@Html.Raw(match.Content)</td>
+                </tr>
+            }
+        </table>
+    }
+    else if (!String.IsNullOrEmpty(_q))
+    {
+        <p>No matches found on "@_q"</p>
+    }
+</body>
+</html>
+
+@functions
+{
+
+    private class MatchWithPublicationScope
+    {
+        public readonly string Reference;
+        public readonly PublicationScope PublicationScope;
+        public readonly string SourceType;
+        public readonly string Content;
+
+        public MatchWithPublicationScope(string reference, PublicationScope publicationScope, string sourceType, string content)
+        {
+            Reference = reference;
+            PublicationScope = publicationScope;
+            SourceType = sourceType;
+            Content = content;
+        }
+    }
+
+    private class Match
+    {
+        public readonly string Reference;
+        public readonly string SourceType;
+        public readonly string Content;
+
+        public Match(string reference, string sourceType, string content)
+        {
+            Reference = reference;
+            SourceType = sourceType;
+            Content = content;
+        }
+    }
+
+    private static readonly List<MatchWithPublicationScope> MatchesWithPublicationStatus = new List<MatchWithPublicationScope>();
+    private static List<Match> _matches = new List<Match>();
+
+    private static readonly Regex RegexForTags = new Regex(@">s+<", RegexOptions.Compiled);
+    private static readonly Regex RegexForBreaks = new Regex(@">[\s]*<", RegexOptions.Compiled);
+
+    private static readonly CultureInfo CurrentCulture = CultureInfo.CurrentUICulture;
+    private static string _q;
+    private static string _casesensitivity;
+    private static int _charsBefore;
+    private static int _charsAfter;
+
+    private static void SearchIPagePlaceholderContent(DataConnection data)
+    {
+        var placeholderContents = data.CurrentPublicationScope == PublicationScope.Unpublished ? data.Get<IPagePlaceholderContent>().Where(f => f.PublicationStatus != "published") : data.Get<IPagePlaceholderContent>();
+
+        var placeholderContentMatches = _casesensitivity == "sensitive"
+            ? placeholderContents.Where(f => f.Content.Contains(_q))
+            : placeholderContents.Where(f => ContainsIgnoreCase(f.Content, _q));
+
+        foreach (var pc in placeholderContentMatches)
+        {
+            var url = GetUrl(pc.PageId);
+
+            if (String.IsNullOrEmpty(url))
+            {
+                continue;
+            }
+
+            var reference = String.Format("<a href=\"{0}\">{1}</a> : {2}", url, url.Replace("/c1mode(unpublished)", ""), pc.PlaceHolderId);
+
+            var contentLines = ContentLines(pc.Content);
+
+            MatchesWithPublicationStatus.Add(new MatchWithPublicationScope(reference, data.CurrentPublicationScope, "PageContent", contentLines));
+        }
+    }
+
+    private static void SearchIPageTexts(DataConnection data)
+    {
+        var pages = data.CurrentPublicationScope == PublicationScope.Unpublished ? data.Get<IPage>().Where(f => f.PublicationStatus != "published") : data.Get<IPage>();
+
+        var pageMatches = _casesensitivity == "sensitive"
+            ? pages.Where(f => f.Title.Contains(_q) || f.Description.Contains(_q))
+            : pages.Where(f => ContainsIgnoreCase(f.Title, _q) || ContainsIgnoreCase(f.Description, _q));
+
+        foreach (var page in pageMatches)
+        {
+            var url = GetUrl(page.Id);
+
+            if (String.IsNullOrEmpty(url))
+            {
+                continue;
+            }
+
+            var reference = String.Format("<a href=\"{0}\">{1}</a>", url, url.Replace("/c1mode(unpublished)", ""));
+
+            var matchInTitle = false;
+            var matchInDescription = false;
+            string contentLines = null;
+
+            if (page.Title.Contains(_q))
+            {
+                matchInTitle = true;
+                contentLines += ContentLines(page.Title);
+            }
+            if (page.Description.Contains(_q))
+            {
+                matchInDescription = true;
+                contentLines += ContentLines(page.Description);
+            }
+
+            reference = reference + (matchInTitle ? " : Title" : null) + (matchInDescription ? " : Description" : null);
+
+            MatchesWithPublicationStatus.Add(new MatchWithPublicationScope(reference, data.CurrentPublicationScope, "Page", contentLines));
+        }
+    }
+
+    private static string GetUrl(Guid pageId)
+    {
+        var page = PageManager.GetPageById(pageId);
+        return page == null ? null : PageUrls.BuildUrl(page);
+    }
+
+    private static string MinifyCode(string code)
+    {
+        code = RegexForTags.Replace(code, "> <");
+        code = RegexForBreaks.Replace(code, "><").Trim();
+        code = code.Replace(" xmlns:f=\"http://www.composite.net/ns/function/1.0\"", "");
+        code = code.Replace(" runat=\"server\"", "");
+
+        return code;
+    }
+
+    private static bool ContainsIgnoreCase(string content, string searchStr)
+    {
+        return CurrentCulture.CompareInfo.IndexOf(content, searchStr, CompareOptions.IgnoreCase) >= 0;
+    }
+
+    private static string ContentLines(string content)
+    {
+        content = MinifyCode(content);
+
+        var index = _casesensitivity == "sensitive"
+            ? content.IndexOf(_q, StringComparison.Ordinal)
+            : content.ToLower().IndexOf(_q.ToLower(), StringComparison.Ordinal);
+
+        var strings = new List<string[]>();
+
+        do
+        {
+            var start1 = index - _charsBefore > -1 ? index - _charsBefore : 0;
+            var length1 = index - start1;
+            var start2 = index + _q.Length;
+            var length2 = content.Substring(start2).Length > _charsAfter ? _charsAfter : content.Substring(start2).Length;
+
+            strings.Add(new[]
+            {
+                content.Substring(start1, length1), content.Substring(start1 + length1, _q.Length),
+                content.Substring(start2, length2)
+            });
+
+            index = _casesensitivity == "sensitive"
+                ? content.IndexOf(_q, index + 1, StringComparison.Ordinal)
+                : content.ToLower().IndexOf(_q.ToLower(), index + 1, StringComparison.Ordinal);
+        } while (index > 0);
+
+        return strings.Aggregate<string[], string>(null, (current, s) => current + String.Format("{0}<b>{1}</b>{2}<br/>", HttpContext.Current.Server.HtmlEncode(s[0]), HttpContext.Current.Server.HtmlEncode(s[1]), HttpContext.Current.Server.HtmlEncode(s[2])));
+    }
+}
