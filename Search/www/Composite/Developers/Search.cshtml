@@ -23,41 +23,33 @@
         searchText = fieldtypes.Contains("text");
     }
 
+    if (String.IsNullOrEmpty(_q) || fieldtypes == null)
+    {
+        searchXhtml = true;
+    }
+
     if (!String.IsNullOrEmpty(_q) && fieldtypes != null && fieldtypes.Any())
     {
-        using (var data = new DataConnection(PublicationScope.Published))
-        {
-            if (searchXhtml)
-            {
-                SearchIPagePlaceholderContent(data);
-            }
-            if (searchText)
-            {
-                SearchIPageTexts(data);
-            }
-        }
-        using (var data = new DataConnection(PublicationScope.Unpublished))
-        {
-            if (searchXhtml)
-            {
-                SearchIPagePlaceholderContent(data);
-            }
-            if (searchText)
-            {
-                SearchIPageTexts(data);
-            }
-        }
+        // Search data types that have PublicationScope (add your custom data types in the method SearchDataTypesWithPublicationScope)
+        SearchDataTypesWithPublicationScope(searchXhtml, searchText, PublicationScope.Published);
+        SearchDataTypesWithPublicationScope(searchXhtml, searchText, PublicationScope.Unpublished);
 
-        _matches = MatchesWithPublicationStatus
+        _matches = MatchesWithPublicationScope
             .GroupBy(g => new { g.Reference, g.SourceType, g.Content })
             .Select(f => new { f.Key.Reference, f.Key.SourceType, f.Key.Content, f.First().PublicationScope })
             .Select(f => new Match(f.Reference + (f.PublicationScope == PublicationScope.Unpublished ? " (unpublished)" : null), f.SourceType, f.Content))
             .ToList();
 
+        // Search data types without PublicationScope (add your custom data types below)
         using (var data = new DataConnection())
         {
             if (searchXhtml)
             {
+                // TODO: create a method for your custom data type xhtml fields and call it here
+            }
+            if (searchText)
+            {
+                // TODO: create a method for your custom data type text fields and call it here
             }
         }
     }
@@ -72,7 +64,7 @@
             background-color: white;
             border: 1px solid #999;
             padding: 1px 3px 2px;
-            margin: 0 1px; 
+            margin: 0 1px;
         }
 
             .checkboxlist label {
@@ -177,7 +169,7 @@
         }
     }
 
-    private static readonly List<MatchWithPublicationScope> MatchesWithPublicationStatus = new List<MatchWithPublicationScope>();
+    private static readonly List<MatchWithPublicationScope> MatchesWithPublicationScope = new List<MatchWithPublicationScope>();
     private static List<Match> _matches = new List<Match>();
 
     private static readonly Regex RegexForTags = new Regex(@">s+<", RegexOptions.Compiled);
@@ -188,6 +180,23 @@
     private static string _casesensitivity;
     private static int _charsBefore;
     private static int _charsAfter;
+
+    private static void SearchDataTypesWithPublicationScope(bool searchXhtml, bool searchText, PublicationScope publicationScope)
+    {
+        using (var data = new DataConnection(publicationScope))
+        {
+            if (searchXhtml)
+            {
+                // TODO: create a method for your custom data type xhtml fields and call it here
+                SearchIPagePlaceholderContent(data);
+            }
+            if (searchText)
+            {
+                // TODO: create a method for your custom data type text fields and call it here
+                SearchIPageTexts(data);
+            }
+        }
+    }
 
     private static void SearchIPagePlaceholderContent(DataConnection data)
     {
@@ -210,7 +219,7 @@
 
             var contentLines = ContentLines(pc.Content);
 
-            MatchesWithPublicationStatus.Add(new MatchWithPublicationScope(reference, data.CurrentPublicationScope, "PageContent", contentLines));
+            MatchesWithPublicationScope.Add(new MatchWithPublicationScope(reference, data.CurrentPublicationScope, "PageContent", contentLines));
         }
     }
 
@@ -250,7 +259,7 @@
 
             reference = reference + (matchInTitle ? " : Title" : null) + (matchInDescription ? " : Description" : null);
 
-            MatchesWithPublicationStatus.Add(new MatchWithPublicationScope(reference, data.CurrentPublicationScope, "Page", contentLines));
+            MatchesWithPublicationScope.Add(new MatchWithPublicationScope(reference, data.CurrentPublicationScope, "Page", contentLines));
         }
     }
 
