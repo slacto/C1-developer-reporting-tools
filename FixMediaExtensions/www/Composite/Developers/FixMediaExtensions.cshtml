@@ -1,0 +1,190 @@
+﻿@using Composite.AspNet.Razor
+@using Composite.Data.Types
+@inherits RazorFunction
+
+@functions
+{
+
+    public Dictionary<string, string> MimetypeMappings = new Dictionary<string, string>
+    {
+        {"application/vnd.ms-excel.sheet.macroenabled.12", "xlsm"},
+        {"application/mac-binhex40", "hqx"},
+        {"application/msword", "doc"},
+        {"application/pdf", "pdf"},
+        {"application/postscript", "eps"},
+        {"application/rtf", "rtf"},
+        {"application/vnd.ms-excel", "xls"},
+        {"application/vnd.ms-powerpoint", "ppt"},
+        {"application/vnd.openxmlformats-officedocument.presentationml.presentation", "pptx"},
+        {"application/vnd.openxmlformats-officedocument.presentationml.slideshow", "ppsx"},
+        {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"},
+        {"application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"},
+        {"application/x-shockwave-flash", "swf"},
+        {"application/x-gzip", "zip"},
+        {"audio/mpeg", "mp3"},
+        {"image/bmp", "bmp"},
+        {"image/gif", "gif"},
+        {"image/jpeg", "jpg"},
+        {"image/png", "png"},
+        {"image/tiff", "tif"},
+        {"text/html", "htm"},
+        {"text/js", "js"},
+        {"text/plain", "txt"},
+        {"text/xml", "xml"},
+        {"video/quicktime", "mov"},
+        {"video/x-flv", "flv"},
+        {"video/x-ms-wmv", "wmv"},
+        {"video/x-msvideo", "avi"}
+    };
+
+    public class Msg
+    {
+        public Msg(Guid id, string path, string extension)
+        {
+            Id = id;
+            Path = path;
+            Extension = extension;
+        }
+
+        public Guid Id { get; set; }
+        public string Path { get; set; }
+        public string Extension { get; set; }
+    }
+
+}
+
+@{
+    var change = Request.QueryString["action"] == "change";
+    var unHandledMimeType = new Dictionary<string, string>();
+    var mismatches = new List<Msg>();
+    var changes = new List<Msg>();
+    var mediaFiles = Data.Get<IMediaFileData>();
+    var updatedMediaFiles = new List<IMediaFileData>();
+
+    foreach (var mediaFileData in mediaFiles.OrderBy(f => f.FolderPath).ThenBy(f => f.FileName))
+    {
+        string extension;
+
+        if (!MimetypeMappings.TryGetValue(mediaFileData.MimeType, out extension))
+        {
+            if (!unHandledMimeType.ContainsKey(mediaFileData.MimeType))
+            {
+                unHandledMimeType.Add(mediaFileData.MimeType, mediaFileData.FolderPath + "/" + mediaFileData.FileName);
+            }
+            continue;
+        }
+
+        string fileExtension = null;
+        var lastDot = mediaFileData.FileName.LastIndexOf(".", StringComparison.Ordinal);
+        if (lastDot != -1)
+        {
+            fileExtension = mediaFileData.FileName.Substring(lastDot + 1).ToLower();
+        }
+
+        switch (fileExtension)
+        {
+            case "jpeg":
+                fileExtension = "jpg";
+                break;
+            case "jpe":
+                fileExtension = "jpg";
+                break;
+            case "html":
+                fileExtension = "htm";
+                break;
+        }
+
+        if (fileExtension == null || fileExtension != extension)
+        {
+            if (MimetypeMappings.ContainsValue(fileExtension))
+            {
+                mismatches.Add(new Msg(mediaFileData.Id, mediaFileData.FolderPath + "/" + mediaFileData.FileName, string.Format("Mimetype extension \"{0}\" or file name extension \"{1}\"", extension, fileExtension)));
+            }
+            else
+            {
+                changes.Add(new Msg(mediaFileData.Id, mediaFileData.FolderPath + "/" + mediaFileData.FileName, extension));
+                mediaFileData.FileName = mediaFileData.FileName + "." + extension;
+                updatedMediaFiles.Add(mediaFileData);
+            }
+        }
+
+        //if (string.IsNullOrWhiteSpace(file.Title))
+        //{
+        //    file.Title = file.FileName.Substring(0, file.FileName.LastIndexOf(".", StringComparison.Ordinal));
+
+        //    needsUpdate = true;
+        //}
+    }
+
+    if (change && updatedMediaFiles.Any())
+    {
+        Data.Update<IMediaFileData>(updatedMediaFiles);
+    }
+}
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>Fix media extensions</title>
+    <link rel="stylesheet" href="style.css"/>
+</head>
+<body style="background-color: inherit; text-align: left;">
+<h1>Fix media extensions</h1>
+@if (unHandledMimeType.Any())
+{
+    <h2>Add the following mimetypes to the code and run it again</h2>
+    <ul>
+        @foreach (var mimeType in unHandledMimeType)
+        {
+            <li>@mimeType.Key - see @mimeType.Value</li>
+        }
+    </ul>
+}
+
+@if (mismatches.Any())
+{
+    <h2>Mismatches</h2>
+    <table>
+        <tr>
+            <th>Id</th>
+            <th>Path</th>
+            <th>??</th>
+        </tr>
+        @foreach (var s in mismatches)
+        {
+            <tr>
+                <td>@s.Id</td>
+                <td>
+                    <a href="@Html.C1().MediaUrl(s.Id)" tatget="_blank">@s.Path</a>
+                </td>
+                <td>@s.Extension</td>
+            </tr>
+        }
+    </table>
+}
+
+@if (change)
+{
+    <div>Complete</div>
+}
+
+else if (changes.Any())
+{
+    <h2>
+        Changes [<a href="?action=change">Fix</a>]
+    </h2>
+    <table>
+        <tr>
+            <th>Path</th>
+            <th>Add</th>
+        </tr>
+        @foreach (var s in changes)
+        {
+            <tr>
+                <td>@s.Path</td>
+                <td>@s.Extension</td>
+            </tr>
+        }
+    </table>
+}
+</body>
+</html>

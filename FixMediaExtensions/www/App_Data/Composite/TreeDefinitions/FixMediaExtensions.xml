@@ -10,7 +10,7 @@
                 <Children>
                     <Element Label="Fix media extensions" Id="FixMediaExtensions">
                         <Actions>
-                            <CustomUrlAction Label="Fix media extensions" Url="~/Composite/Developers/FixMediaExtensions.aspx" />
+                            <CustomUrlAction Label="Fix media extensions" Url="~/Composite/Developers/FixMediaExtensions.cshtml" />
                         </Actions>
                     </Element>
                 </Children>
